@@ -1,0 +1,22 @@
+# WorkBuddy 工作区数据（项目记忆/任务等，本机私有）
+.workbuddy/
+
+# 临时验证脚本与探针
+.tmp-verify/
+
+# 应用内的临时转换产物（UMD 源抓取脚本，一次性使用）
+apps/surgery-marking-demo/.tmp-umd-src/
+apps/surgery-marking-demo/.tmp-umd.py
+
+# 交付截图与实测报告（已归档至资料库，不进仓库）
+output/
+
+# 顶层原始模型资产（179 MB，其中 Startup.glb 156 MB 超 GitHub 单文件 100 MB 限制；
+# 应用运行所需的模型已内置在 apps/surgery-marking-demo/models/ 中）
+# 注意：开头的 / 锚定仓库根目录，否则会把任意层级的 models/ 目录都忽略掉
+/models/
+
+# 系统/编辑器杂项
+Thumbs.db
+.DS_Store
+*.log

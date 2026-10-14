@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>手术部位 3D 标记与三方核查 · 功能验证版本</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">3D</span>
+      <div class="brand-text">
+        <div class="brand-title">手术部位 3D 标记与三方核查系统</div>
+        <div class="brand-sub">功能验证版本 · 不含患者信息 · 用于标记展示效果验证</div>
+      </div>
+    </div>
+
+    <div class="topbar-mid">
+      <label class="role-switch">
+        <span>当前操作身份</span>
+        <select id="roleSelect">
+          <option value="orderer">开单医生</option>
+          <option value="surgeon">主刀医生</option>
+          <option value="nurse">手术室护士</option>
+        </select>
+      </label>
+      <span class="badge badge-env" title="本地验证环境，数据仅存于本机浏览器">验证模式</span>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="btn" id="btnExportJson">导出 JSON</button>
+      <button class="btn" id="btnImportJson">导入 JSON</button>
+      <input type="file" id="fileInput" accept="application/json,.json" hidden />
+      <button class="btn" id="btnScreenshot">导出截图</button>
+      <button class="btn btn-ghost" id="btnReset">重置演示</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+
+    <aside class="panel panel-left">
+      <div class="panel-scroll">
+
+        <section class="card">
+          <h3 class="card-title">病例（临时验证编号）</h3>
+          <div class="kv"><span>编号</span><b id="caseId">--</b></div>
+          <label class="field">
+            <span>方案标题</span>
+            <input id="caseTitle" type="text" maxlength="40" placeholder="如：左肺上叶切除方案" />
+          </label>
+          <div class="notice notice-green">
+            <b>本版本不记录任何患者身份信息</b>
+            <span>无姓名 / 住院号 / 身份证 / 联系方式，亦不与 HIS 对接。</span>
+          </div>
+          <div class="privacy" id="privacyCheck">隐私字段自检：<b>--</b></div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">手术侧别 <em class="req">必填</em></h3>
+          <div class="seg" id="lateralitySeg">
+            <button data-v="left">左侧</button>
+            <button data-v="right">右侧</button>
+            <button data-v="bilateral">双侧</button>
+          </div>
+          <p class="hint-text" id="lateralityHint">未选择侧别，无法提交核查。</p>
+          <label class="field">
+            <span>术式备注（可选）</span>
+            <textarea id="caseNote" rows="2" maxlength="120" placeholder="仅填写与部位相关的内容，勿填写患者身份信息"></textarea>
+          </label>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">方案版本</h3>
+          <ul class="version-list" id="versionList"></ul>
+          <button class="btn btn-block" id="btnNewRevision">基于当前版本新建修订版</button>
+          <p class="hint-text">方案一旦被三方核查通过即自动冻结为只读；此后修改必须新建修订版，历史版本永久保留。</p>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">流程状态</h3>
+          <div class="flow" id="flowState"></div>
+          <button class="btn btn-primary btn-block" id="btnSubmitVerify">提交三方核查</button>
+          <p class="hint-text" id="submitHint">提交前需：已选侧别 + 至少 1 个标记。</p>
+        </section>
+
+      </div>
+    </aside>
+
+    <section class="stage">
+      <div class="viewport" id="viewport"></div>
+      <div class="label-layer" id="labelLayer"></div>
+
+      <div class="tool-rail" id="toolRail">
+        <button class="tool active" data-tool="select" title="选择 / 旋转视角 (V)">
+          <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.6L10.6 19z" fill="currentColor"/></svg>
+          <span>选择</span>
+        </button>
+        <button class="tool" data-tool="part" title="按部位选中 (B)：点击模型即整块选中该点所属解剖部位">
+          <svg viewBox="0 0 24 24"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="7.6" y="7.6" width="8.8" height="8.8" rx="1.6" fill="currentColor" opacity="0.55"/></svg>
+          <span>部位</span>
+        </button>
+        <button class="tool" data-tool="point" title="点标记 (P)">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+          <span>点标记</span>
+        </button>
+        <button class="tool" data-tool="region" title="区域标记 (R)">
+          <svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 5-3 9-9 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>区域标记</span>
+        </button>
+        <button class="tool" data-tool="measure" title="距离测量 (M)">
+          <svg viewBox="0 0 24 24"><path d="M3 14l11-11 7 7-11 11z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span>测量</span>
+        </button>
+      </div>
+
+      <div class="view-bar" id="viewBar">
+        <div class="view-group">
+          <button data-view="front" class="active">前</button>
+          <button data-view="back">后</button>
+          <button data-view="left">左</button>
+          <button data-view="right">右</button>
+          <button data-view="top">俯</button>
+        </div>
+        <span class="vdiv"></span>
+        <button id="btnFit" class="ghost-btn">适应窗口</button>
+        <button id="btnGhost" class="ghost-btn">模型半透明</button>
+        <button id="btnToggleMarkers" class="ghost-btn active">标记显示</button>
+      </div>
+
+      <div class="legend" id="legend"></div>
+
+      <div class="draft-bar hidden" id="draftBar">
+        <span id="draftText">区域标记：已取 0 个点</span>
+        <button class="btn btn-mini btn-primary" id="btnFinishRegion">闭合成区域</button>
+        <button class="btn btn-mini btn-ghost" id="btnCancelRegion">取消</button>
+      </div>
+
+      <div class="stage-note">
+        标记锚定于模型几何体（面索引 + 重心坐标），旋转、缩放视角不会漂移。
+      </div>
+    </section>
+
+    <aside class="panel panel-right">
+      <div class="tabs">
+        <button class="tab active" data-tab="markers">标记清单 <em id="markerCount">0</em></button>
+        <button class="tab" data-tab="parts">按部位</button>
+        <button class="tab" data-tab="verify">三方核查 <em id="verifyDot" class="dot hidden"></em></button>
+        <button class="tab" data-tab="range">范围说明</button>
+      </div>
+
+      <div class="tabpane" id="pane-markers">
+        <div class="pane-scroll" id="markerList"></div>
+      </div>
+      <div class="tabpane hidden" id="pane-parts">
+        <div class="pane-scroll" id="partsPane"></div>
+      </div>
+      <div class="tabpane hidden" id="pane-verify">
+        <div class="pane-scroll" id="verifyPane"></div>
+      </div>
+      <div class="tabpane hidden" id="pane-range">
+        <div class="pane-scroll" id="rangePane"></div>
+      </div>
+    </aside>
+
+  </main>
+
+  <footer class="statusbar">
+    <span id="statusHint">选择一个工具后，在模型表面点击即可操作。</span>
+    <span class="spacer"></span>
+    <span id="statusProbe">指向模型可查看部位</span>
+  </footer>
+
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<div id="modelOverlay" class="model-overlay hidden"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/three/anatomy-loaders.js"></script>
+<script src="src/util.js"></script>
+<script src="src/model-loader.js"></script>
+<script src="src/regions.js"></script>
+<script src="src/anatomy.js"></script>
+<script src="src/anchors.js"></script>
+<script src="src/store.js"></script>
+<script src="src/viewer.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
