@@ -240,6 +240,11 @@ button { cursor: pointer; border: none; background: none; }
   color: #10141b; display: grid; place-items: center; font-size: 9.5px; font-weight: 800;
 }
 .marker-label .mname { color: #eef2f8; font-weight: 600; }
+.marker-label .mk-sym {
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  display: grid; place-items: center; font-size: 11px; font-weight: 800;
+}
+.marker-label .mk-stage { color: #9fb3cc; font-size: 10px; }
 .marker-label.selected { box-shadow: 0 0 0 3px rgba(255, 255, 255, .28); }
 .marker-label.dim { opacity: .35; }
 
@@ -304,6 +309,14 @@ button { cursor: pointer; border: none; background: none; }
 }
 .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #aab6c8; }
 .legend-swatch { width: 9px; height: 9px; border-radius: 50%; }
+.legend-sym {
+  width: 17px; height: 17px; border-radius: 50%; background: #fff; border: 1.5px solid currentColor;
+  display: inline-grid; place-items: center; font-size: 10px; font-weight: 700;
+}
+.chip i.chip-sym {
+  width: 17px; height: 17px; border-radius: 50%; background: #fff; border: 1.5px solid currentColor;
+  display: inline-grid; place-items: center; font-size: 10px; font-style: normal; font-weight: 700;
+}
 
 .draft-bar {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
@@ -354,6 +367,10 @@ button { cursor: pointer; border: none; background: none; }
 .mk-head:hover { background: var(--bg-panel-2); }
 .mk-item.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(33, 96, 196, .12); }
 .mk-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
+.mk-type {
+  width: 17px; height: 17px; border-radius: 50%; background: #fff; border: 1.5px solid currentColor;
+  display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; flex: 0 0 17px;
+}
 .mk-title { font-weight: 700; font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
 .mk-body { border-top: 1px solid var(--line); padding: 9px; background: var(--bg-panel-2); }

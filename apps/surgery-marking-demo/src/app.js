@@ -131,15 +131,15 @@
   }
 
   /** 在结构质心处落一个点标记（质心沿外向法线投射到自身表面） */
-  function seedPointAt(viewer, st, name, type) {
+  function seedPointAt(viewer, st, name, type, extra) {
     const hit = viewer.pickAtLocal(st.centroid, st.normal, st.mesh);
     if (!hit) return null;
-    return Store.addMarker({
+    return Store.addMarker(Object.assign({
       kind: 'point', type: type, name: name,
       laterality: st.laterality || hit.laterality || null,
       regionName: st.name, partName: st.partName,
       anchors: [hit.anchor]
-    });
+    }, extra || {}));
   }
 
   function seedDemo() {
@@ -193,6 +193,14 @@
         regionName: fore.name, partName: fore.partName,
         regionKey: fore.key,
         anchors: [{ regionKey: fore.key }]
+      });
+    }
+
+    // 6) 点标记：病灶（带来源/大小/阶段，展示 V0.6 语义字段）
+    const pancreas = findStructure(viewer, '胰', null, true) || findStructure(viewer, '胰腺') || findStructure(viewer, '胃');
+    if (pancreas) {
+      seedPointAt(viewer, pancreas, '胰头病灶', 'lesion', {
+        source: 'CT / MRI', size: '2.5 cm', stage: '疑似'
       });
     }
 

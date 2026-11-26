@@ -17,14 +17,22 @@
 
   /* ---------- 常量目录 ---------- */
 
+  // symbol 为模型上的符号牌文字；surface 为贴皮形式（line=沿走行画线 / ring=空心圈 / dot=点圈 / cross=叉）
   const MARKER_TYPES = {
-    incision: { label: '切口', color: '#e5484d', shape: 'point' },
-    resection: { label: '切除范围', color: '#f0930a', shape: 'region' },
-    puncture: { label: '穿刺点', color: '#7c5cff', shape: 'point' },
-    drainage: { label: '引流位置', color: '#0d9488', shape: 'point' },
-    caution: { label: '注意 / 禁区', color: '#d6409f', shape: 'either' },
-    other: { label: '其他标记', color: '#64748b', shape: 'either' }
+    incision: { label: '切口', color: '#e5484d', shape: 'point', symbol: '─', surface: 'line' },
+    resection: { label: '切除范围', color: '#f0930a', shape: 'region', symbol: '○', surface: 'ring' },
+    puncture: { label: '穿刺点', color: '#7c5cff', shape: 'point', symbol: '◎', surface: 'dot' },
+    drainage: { label: '引流位置', color: '#0d9488', shape: 'point', symbol: '引', surface: 'dot' },
+    caution: { label: '注意 / 禁区', color: '#d6409f', shape: 'either', symbol: '×', surface: 'cross' },
+    lesion: { label: '病灶', color: '#b42318', shape: 'either', symbol: '病', surface: 'ring' },
+    stoma: { label: '造口', color: '#0284c7', shape: 'either', symbol: '造', surface: 'ring' },
+    biopsy: { label: '活检点', color: '#4f46e5', shape: 'point', symbol: '活', surface: 'dot' },
+    specimen: { label: '标本取出部位', color: '#65a30d', shape: 'either', symbol: '标', surface: 'dot' },
+    other: { label: '其他标记', color: '#64748b', shape: 'either', symbol: '·', surface: 'dot' }
   };
+
+  const MARKER_SOURCES = ['未指定', 'CT / MRI', '超声', '内镜', '术中探查'];
+  const MARKER_STAGES = ['未指定', '疑似', '确诊', '已处理'];
 
   const ROLES = [
     { key: 'orderer', name: '开单医生', duty: '开具手术单并完成 3D 标记', short: '开' },
@@ -246,6 +254,11 @@
         regionName: data.regionName || '',
         partName: data.partName || '',
         anchors: data.anchors,
+        // V0.6 可选语义字段：不影响旧方案（缺省为空串），也不属于患者身份信息
+        source: data.source || '',
+        size: data.size || '',
+        stage: data.stage || '',
+        segment: data.segment || '',
         note: '',
         createdAt: U.now(),
         updatedAt: U.now()
@@ -426,6 +439,43 @@
       U.toast('已导出 JSON（不含患者信息）', 'ok');
     },
 
+    /** 导出可打印的核查单（HTML，打开后浏览器 Ctrl+P 即可打印；附符号图例） */
+    exportChecklist: function () {
+      const audit = privacyAudit(this.state);
+      if (!audit.ok) { U.toast('导出被阻止：检测到疑似患者字段', 'bad'); return; }
+      const v = this.current();
+      const esc = U.escapeHtml;
+      const legend = Object.keys(MARKER_TYPES).map(function (k) {
+        const t = MARKER_TYPES[k];
+        return '<span class="lg"><i style="color:' + t.color + '">' + esc(t.symbol) + '</i>' + esc(t.label) + '</span>';
+      }).join('');
+      const rows = v.markers.map(function (m, i) {
+        const t = MARKER_TYPES[m.type] || MARKER_TYPES.other;
+        const extra = [m.source, m.size, m.stage, m.segment].filter(function (x) { return x; }).map(esc).join(' · ');
+        return '<tr><td>' + (i + 1) + '</td><td><i class="sym" style="color:' + t.color + '">' + esc(t.symbol) + '</i>' + esc(t.label) +
+          '</td><td>' + esc(m.name) + '</td><td>' + esc(m.regionName || m.partName || '—') +
+          '</td><td>' + esc(LATERALITY_TEXT[m.laterality] || '未指定') + '</td><td>' + (extra || '—') +
+          '</td><td>' + esc(m.note || '') + '</td></tr>';
+      }).join('');
+      const html = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>手术标记核查单 ' +
+        esc(this.state.caseId) + '</title><style>' +
+        'body{font:13px/1.6 "Microsoft YaHei",sans-serif;color:#222;margin:28px}h1{font-size:19px;margin:0 0 6px}' +
+        '.meta{color:#555;margin-bottom:14px}.lg{display:inline-flex;align-items:center;gap:5px;margin:0 14px 8px 0}' +
+        '.lg i,.sym{display:inline-grid;place-items:center;width:18px;height:18px;border:1.5px solid currentColor;border-radius:50%;font-style:normal;font-weight:700}' +
+        'table{border-collapse:collapse;width:100%;margin-top:10px}th,td{border:1px solid #bbb;padding:6px 8px;text-align:left;vertical-align:top}' +
+        'th{background:#f2f4f7;font-weight:600}.legend{margin:12px 0;padding:10px;background:#f7f8fa;border:1px solid #ddd}' +
+        'p.note{color:#666;font-size:12px}@media print{body{margin:12mm}}</style></head><body>' +
+        '<h1>手术标记核查单</h1><div class="meta">方案编号：' + esc(this.state.caseId) + ' · 方案标题：' + esc(this.state.title || '未填写') +
+        ' · 版本 v' + v.version + ' · 状态：' + esc(STATUS_TEXT[v.status]) +
+        ' · 手术侧别：' + esc(LATERALITY_TEXT[v.laterality] || '未指定') +
+        ' · 校验码：' + esc(v.checksum || '未冻结') + '</div>' +
+        '<div class="legend"><b>符号图例</b><br>' + legend + '</div>' +
+        '<table><thead><tr><th>#</th><th>类型</th><th>标记名称</th><th>解析部位</th><th>侧别</th><th>来源/大小/阶段/节段</th><th>备注</th></tr></thead><tbody>' +
+        rows + '</tbody></table><p class="note">本核查单不含患者身份信息；打开本文件后可用浏览器 Ctrl+P 打印。</p></body></html>';
+      U.download('核查单_' + this.state.caseId + '.html', html, 'text/html');
+      U.toast('已导出核查单（含符号图例，可打印）', 'ok');
+    },
+
     importJson: function (text) {
       let parsed;
       try { parsed = JSON.parse(text); } catch (e) { U.toast('JSON 解析失败', 'bad'); return false; }
@@ -435,6 +485,14 @@
       }
       const audit = privacyAudit(parsed);
       if (!audit.ok) { U.toast('导入被阻止：文件含疑似患者字段 ' + audit.hits.join('、'), 'bad'); return false; }
+      // 兼容旧版方案：V0.6 之前的标记没有语义字段，导入时补空串，保持数据结构一致
+      (parsed.versions || []).forEach(function (v) {
+        (v.markers || []).forEach(function (m) {
+          ['source', 'size', 'stage', 'segment'].forEach(function (k) {
+            if (typeof m[k] !== 'string') m[k] = '';
+          });
+        });
+      });
       this.state = parsed;
       this.createdFresh = false;
       this.save();
@@ -447,6 +505,8 @@
   SMK.store = Store;
   SMK.catalog = {
     MARKER_TYPES: MARKER_TYPES,
+    MARKER_SOURCES: MARKER_SOURCES,
+    MARKER_STAGES: MARKER_STAGES,
     ROLES: ROLES,
     VERIFY_ITEMS: VERIFY_ITEMS,
     STATUS_TEXT: STATUS_TEXT,

@@ -50,6 +50,7 @@
       UI.setRole(e.target.value);
     });
     $('btnExportJson').addEventListener('click', function () { Store.exportJson(); });
+    $('btnExportChecklist').addEventListener('click', function () { Store.exportChecklist(); });
     $('btnImportJson').addEventListener('click', function () { $('fileInput').click(); });
     $('fileInput').addEventListener('change', function (e) {
       const f = e.target.files && e.target.files[0];
@@ -487,7 +488,8 @@
   UI.renderLegend = function () {
     $('legend').innerHTML = Object.keys(C.MARKER_TYPES).map(function (k) {
       const t = C.MARKER_TYPES[k];
-      return '<span class="legend-item"><span class="legend-swatch" style="background:' + t.color + '"></span>' + t.label + '</span>';
+      return '<span class="legend-item" title="符号 ' + t.symbol + '"><span class="legend-sym" style="color:' + t.color + '">' +
+        U.escapeHtml(t.symbol) + '</span>' + t.label + '</span>';
     }).join('') + '<span class="legend-item"><span class="legend-swatch" style="background:#38bdf8"></span>测量线</span>';
   };
 
@@ -500,7 +502,7 @@
       '<div class="chips" id="typeChips">' + Object.keys(C.MARKER_TYPES).map(function (k) {
         const t = C.MARKER_TYPES[k];
         return '<button class="chip' + (UI.newType === k ? ' active' : '') + '" data-type="' + k + '" style="--c:' + t.color + '">' +
-          '<i style="background:' + t.color + '"></i>' + t.label + '</button>';
+          '<i class="chip-sym" style="color:' + t.color + '">' + U.escapeHtml(t.symbol) + '</i>' + t.label + '</button>';
       }).join('') + '</div>' +
       '<p class="hint-text">选择类型后，用工具栏的「点标记 / 区域标记」在模型上取点。</p></div>';
 
@@ -530,6 +532,20 @@
               return '<option value="' + k + '"' + (k === m.laterality ? ' selected' : '') + '>' + C.LATERALITY_TEXT[k] + '</option>';
             }).join('') + '</select></div>' +
             '</div>' +
+            '<div class="mk-row" style="margin-top:6px">' +
+            '<div><span class="sub-label">来源依据（可选）</span><select class="inline-select" data-role="source"' + (edit ? '' : ' disabled') + '>' +
+            (C.MARKER_SOURCES || ['未指定']).map(function (s) {
+              return '<option value="' + s + '"' + (s === (m.source || '未指定') ? ' selected' : '') + '>' + s + '</option>';
+            }).join('') + '</select></div>' +
+            '<div><span class="sub-label">大小（可选）</span><input class="inline-input" data-role="size" placeholder="如 2.5 cm" value="' + U.escapeHtml(m.size || '') + '"' + (edit ? '' : ' disabled') + ' /></div>' +
+            '</div>' +
+            '<div class="mk-row" style="margin-top:6px">' +
+            '<div><span class="sub-label">阶段（可选）</span><select class="inline-select" data-role="stage"' + (edit ? '' : ' disabled') + '>' +
+            (C.MARKER_STAGES || ['未指定']).map(function (s) {
+              return '<option value="' + s + '"' + (s === (m.stage || '未指定') ? ' selected' : '') + '>' + s + '</option>';
+            }).join('') + '</select></div>' +
+            '<div><span class="sub-label">脊柱节段（可选）</span><input class="inline-input" data-role="segment" placeholder="如 L4 / L5" value="' + U.escapeHtml(m.segment || '') + '"' + (edit ? '' : ' disabled') + ' /></div>' +
+            '</div>' +
             '<span class="sub-label" style="margin-top:6px">系统解析部位（自动，不可改）</span>' +
             '<div class="mk-region" style="font-size:11.5px;color:#4a5568;background:#fff;border:1px solid #dde3ec;border-radius:5px;padding:6px 8px;line-height:1.6">' +
             U.escapeHtml(m.partName || '—') + ' · ' + U.escapeHtml(m.regionName || '—') + '<br>' +
@@ -549,6 +565,7 @@
         return '<div class="mk-item' + (sel ? ' selected' : '') + '" data-id="' + m.id + '">' +
           '<div class="mk-head">' +
           '<span class="mk-dot" style="background:' + meta.color + '"></span>' +
+          '<span class="mk-type" style="color:' + meta.color + '">' + U.escapeHtml(meta.symbol || '·') + '</span>' +
           '<span class="mk-title">' + (i + 1) + '. ' + U.escapeHtml(m.name) + '</span>' +
           '<span class="mk-sub">' + U.escapeHtml(m.regionName || m.partName || '') + latTxt + '</span>' +
           '</div>' + body + '</div>';
@@ -613,6 +630,20 @@
       if (typeS) typeS.addEventListener('change', function () { Store.updateMarker(id, { type: typeS.value }); });
       const latS = item.querySelector('[data-role="laterality"]');
       if (latS) latS.addEventListener('change', function () { Store.updateMarker(id, { laterality: latS.value || null }); });
+      const srcS = item.querySelector('[data-role="source"]');
+      if (srcS) srcS.addEventListener('change', function () {
+        Store.updateMarker(id, { source: srcS.value === '未指定' ? '' : srcS.value });
+      });
+      const stageS = item.querySelector('[data-role="stage"]');
+      if (stageS) stageS.addEventListener('change', function () {
+        Store.updateMarker(id, { stage: stageS.value === '未指定' ? '' : stageS.value });
+      });
+      [['size', 'size'], ['segment', 'segment']].forEach(function (pair) {
+        const inp = item.querySelector('[data-role="' + pair[0] + '"]');
+        if (inp) inp.addEventListener('input', U.debounce(function () {
+          Store.updateMarker(id, (function () { const o = {}; o[pair[1]] = inp.value; return o; })(), true);
+        }, 320));
+      });
     });
 
     pane.querySelectorAll('[data-del-measure]').forEach(function (b) {
@@ -1094,14 +1125,17 @@
       '<b>三态层级切换</b>：<b>全部</b>（部位 + 脏器同屏，部位为半透明外壳） / <b>仅部位</b>（只看体表分区，便于按部位选点） / <b>仅脏器</b>（只看深层结构），切换后拾取目标、高亮与标记显隐同步联动。',
       '<b>类别显隐</b>：骨骼 / 脏器 / 脑与神经三类可独立显示与隐藏（默认隐藏脑与神经），体表部位层另有独立开关，便于看清深层脏器（如隐藏骨骼与部位层看腹腔）；隐藏类别的标记一并隐藏。',
       '<b>结构级整块选中</b>：点击模型任意位置即选中该处所属的解剖结构或体表分区；悬停清单可整块预览；面板支持中文搜索（可搜结构名、部位名与图谱细分分区名）。',
-      '<b>点标记</b>：单击取点，支持类型（切口 / 切除 / 穿刺 / 引流 / 注意 / 其他）、侧别、备注。',
+      '<b>点标记</b>：单击取点，支持 10 种类型（切口 / 切除范围 / 穿刺点 / 引流位置 / 注意禁区 / 病灶 / 造口 / 活检点 / 标本取出部位 / 其他）、侧别、备注。',
+      '<b>符号化标记</b>：每类标记在模型上有专属符号牌（始终朝向相机）与贴皮线条 / 圆环（○ 圈、─ 线、× 禁区等），对应规范中的体表标识画法；HTML 标签与清单同步显示符号。',
+      '<b>标记语义字段</b>：可选填来源依据（CT/MRI、超声、内镜、术中探查）、大小、阶段（疑似 / 确诊 / 已处理）与脊柱节段，全部留空时与原有标记行为一致；不记录任何患者身份信息。',
       '<b>区域标记</b>：既可在体表连续取点闭合成贴合曲面的面片，也可一键把整个解剖结构或体表部位标记为区域（范围即该结构 / 部位的真实几何范围）。',
       '<b>防漂移锚定</b>：标记以「结构 id + 面索引 + 面内重心坐标」或「区域键 regionKey」锚定于模型几何体，位置取分区质心，旋转、缩放、平移视角与切换层级均不漂移。',
       '<b>距离测量</b>：两点间距（模型为真实米制尺寸，单位 mm）。',
       '<b>方案版本管理</b>：草稿 / 待核查 / 已冻结 / 已退回，冻结后只读，修改须新建修订版。',
       '<b>三方核查流程</b>：开单医生、主刀医生、手术室护士分别独立核对四项核查点，可提出异议；三方一致即冻结，任一异议即退回。',
       '<b>操作留痕</b>：记录操作角色、时间与动作，可追溯。',
-      '<b>本地存储与 JSON 导入导出</b>：数据仅存于本机浏览器，可导出查看与再导入。',
+      '<b>本地存储与 JSON 导入导出</b>：数据仅存于本机浏览器，可导出查看与再导入；旧版 JSON（无新增字段）可直接导入。',
+      '<b>可打印核查单</b>：一键导出含符号图例、侧别、标记明细与校验码的 HTML 核查单，打开后浏览器 Ctrl+P 即可打印。',
       '<b>隐私字段自检</b>：每次落盘与导出前机械校验，命中患者身份字段即阻断。'
     ];
     const out = [

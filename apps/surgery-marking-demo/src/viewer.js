@@ -180,6 +180,66 @@
     return sp;
   }
 
+  /* ---------------- 标记符号牌（始终朝向相机） ---------------- */
+  function markerSymbol(meta) {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 128;
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, 128, 128);
+    g.beginPath();
+    g.arc(64, 64, 52, 0, Math.PI * 2);
+    g.fillStyle = '#ffffff';
+    g.fill();
+    g.lineWidth = 8;
+    g.strokeStyle = meta.color;
+    g.stroke();
+    g.fillStyle = meta.color;
+    g.strokeStyle = meta.color;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    if (meta.symbol === '─') {
+      g.lineWidth = 10;
+      g.beginPath(); g.moveTo(38, 64); g.lineTo(90, 64); g.stroke();
+    } else if (meta.symbol === '○') {
+      g.lineWidth = 9;
+      g.beginPath(); g.arc(64, 64, 25, 0, Math.PI * 2); g.stroke();
+    } else if (meta.symbol === '×') {
+      g.lineWidth = 10;
+      g.beginPath(); g.moveTo(43, 43); g.lineTo(85, 85); g.moveTo(85, 43); g.lineTo(43, 85); g.stroke();
+    } else {
+      g.font = 'bold 62px "Microsoft YaHei", sans-serif';
+      g.fillText(meta.symbol || '·', 64, 66);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    sp.scale.set(0.048, 0.048, 1);
+    // Sprite 的 geometry 是 Three.js 内部共享对象，禁止在重建标记时 dispose
+    sp.geometry.userData.shared = true;
+    return sp;
+  }
+
+  /** 在皮肤切平面上画类型专属线条（与符号牌配套） */
+  function surfaceLines(meta, p, nrm, color) {
+    if (meta.surface !== 'line' && meta.surface !== 'cross') return null;
+    const u = new THREE.Vector3().crossVectors(nrm, new THREE.Vector3(0, 1, 0));
+    if (u.lengthSq() < 1e-6) u.set(1, 0, 0);
+    u.normalize();
+    const v = new THREE.Vector3().crossVectors(nrm, u).normalize();
+    const pts = [];
+    const d = 0.030;
+    if (meta.surface === 'line') {
+      pts.push(p.clone().addScaledVector(u, -d), p.clone().addScaledVector(u, d));
+    } else {
+      pts.push(p.clone().addScaledVector(u, -d).addScaledVector(v, -d), p.clone().addScaledVector(u, d).addScaledVector(v, d));
+      pts.push(p.clone().addScaledVector(u, d).addScaledVector(v, -d), p.clone().addScaledVector(u, -d).addScaledVector(v, d));
+    }
+    return new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.95, depthWrite: false })
+    );
+  }
+
   /* ---------------- Viewer ---------------- */
   /**
    * @param body 由外部异步加载并构建好的模型（SMK.body.buildFromGLTF 的返回值）。
@@ -692,7 +752,7 @@
       g.traverse(function (o) {
         // 分区索引里的几何是共享的（多个标记可能指向同一部位），不可销毁
         if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
-        if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (mm) { mm.dispose(); }); }
+        if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (mm) { if (mm.map) mm.map.dispose(); mm.dispose(); }); }
       });
     });
     this._markerGroups = new Map();
@@ -775,6 +835,11 @@
           core.position.copy(sum);
           g.add(core);
         }
+        if (labelPos) {
+          const sp = markerSymbol(meta);
+          sp.position.copy(labelPos);
+          g.add(sp);
+        }
       } else {
         const r = SMK.anchors.resolve(m.anchors[0], self.bodyRoot);
         if (r) {
@@ -803,7 +868,13 @@
           stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), nrm);
           g.add(stem);
 
+          const skinLines = surfaceLines(meta, p, nrm, color);
+          if (skinLines) g.add(skinLines);
+
           labelPos = p.clone().addScaledVector(nrm, 0.05);
+          const sp = markerSymbol(meta);
+          sp.position.copy(labelPos);
+          g.add(sp);
           g.userData.center = p.clone();
           g.userData.normal = nrm;
           g.userData.sphere = sphere;
@@ -827,8 +898,15 @@
         el.className = 'marker-label';
         el.style.color = meta.color;
         el.dataset.markerId = m.id;
-        el.innerHTML = '<span class="idx">' + (i + 1) + '</span><span class="mname">' + U.escapeHtml(m.name) + '</span>';
-        el.title = m.name + ' · ' + (m.regionName || '') + (m.laterality ? ' · ' + SMK.catalog.LATERALITY_TEXT[m.laterality] : '');
+        el.innerHTML = '<span class="idx">' + (i + 1) + '</span>' +
+          '<span class="mk-sym" style="color:' + meta.color + '">' + U.escapeHtml(meta.symbol || '·') + '</span>' +
+          '<span class="mname">' + U.escapeHtml(m.name) + '</span>' +
+          (m.stage && m.stage !== '未指定' ? '<span class="mk-stage">' + U.escapeHtml(m.stage) + '</span>' : '');
+        el.title = m.name + ' · ' + (m.regionName || '') +
+          (m.laterality ? ' · ' + SMK.catalog.LATERALITY_TEXT[m.laterality] : '') +
+          (m.source && m.source !== '未指定' ? ' · 来源:' + m.source : '') +
+          (m.size ? ' · ' + m.size : '') +
+          (m.segment ? ' · ' + m.segment : '');
         el.addEventListener('click', function (ev) {
           ev.stopPropagation();
           self._pickCbs.forEach(function (cb) { cb({ type: 'marker', markerId: m.id, from: 'label' }); });
